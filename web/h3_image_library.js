@@ -140,6 +140,23 @@ function installStyles() {
       outline: 1px solid #67b8ff;
       outline-offset: 2px;
     }
+    .h3il-root.is-file-drop-target .h3il-cell.is-empty {
+      border-color: #67b8ff;
+      background: #1b2b39;
+    }
+    .h3il-cell:focus-visible {
+      border-color: #67b8ff;
+      outline: 1px solid rgba(103, 184, 255, .5);
+      outline-offset: 1px;
+    }
+    .h3il-file-input {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      opacity: 0;
+      pointer-events: none;
+    }
     .h3il-cell {
       position: relative;
       min-width: 0;
@@ -193,6 +210,41 @@ function installStyles() {
       font-size: 25px;
       font-weight: 300;
       pointer-events: none;
+    }
+    .h3il-cell:not(.is-empty) .h3il-empty-mark {
+      display: none;
+    }
+    .h3il-plus {
+      position: relative;
+      width: 30px;
+      height: 30px;
+      border: 1px solid #4b5660;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, .025);
+      color: #7d8b96;
+      transition: border-color .12s ease, background .12s ease, color .12s ease;
+    }
+    .h3il-plus::before,
+    .h3il-plus::after {
+      box-sizing: border-box;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 12px;
+      height: 1.5px;
+      border-radius: 2px;
+      background: currentColor;
+      content: "";
+      transform: translate(-50%, -50%);
+    }
+    .h3il-plus::after {
+      transform: translate(-50%, -50%) rotate(90deg);
+    }
+    .h3il-cell.is-empty:hover .h3il-plus,
+    .h3il-cell.is-file-over .h3il-plus {
+      border-color: #67b8ff;
+      background: rgba(103, 184, 255, .1);
+      color: #9bd0ff;
     }
     .h3il-badge {
       position: absolute;
@@ -292,6 +344,10 @@ function createCell(node, index) {
   image.hidden = true;
   const emptyMark = document.createElement("span");
   emptyMark.className = "h3il-empty-mark";
+  const plus = document.createElement("span");
+  plus.className = "h3il-plus";
+  plus.setAttribute("aria-hidden", "true");
+  emptyMark.append(plus);
   const name = document.createElement("span");
   name.className = "h3il-name";
   name.hidden = true;
@@ -302,11 +358,27 @@ function createCell(node, index) {
   remove.title = "删除这张图片";
   remove.setAttribute("aria-label", "删除这张图片");
   remove.hidden = true;
+  const fileInput = document.createElement("input");
+  fileInput.type = "file";
+  fileInput.className = "h3il-file-input";
+  fileInput.accept = "image/*";
+  fileInput.multiple = true;
+  fileInput.tabIndex = -1;
+  fileInput.setAttribute("aria-hidden", "true");
 
   for (const element of [badge, image, emptyMark, name, remove]) {
     element.addEventListener("pointerdown", stopPropagation);
     element.addEventListener("mousedown", stopPropagation);
   }
+
+  fileInput.addEventListener("pointerdown", stopPropagation);
+  fileInput.addEventListener("mousedown", stopPropagation);
+  fileInput.addEventListener("click", stopPropagation);
+  fileInput.addEventListener("change", () => {
+    const files = Array.from(fileInput.files || []);
+    fileInput.value = "";
+    if (files.length) uploadFiles(node, files, index);
+  });
 
   cell.addEventListener("dragstart", (event) => {
     const images = readImages(node);
@@ -328,24 +400,26 @@ function createCell(node, index) {
 
   cell.addEventListener("click", (event) => {
     stopEvent(event);
-    openFilePicker(node, index);
+    fileInput.click();
   });
 
   cell.addEventListener("dblclick", stopEvent);
   cell.addEventListener("keydown", (event) => {
     if (event.key !== "Enter" && event.key !== " ") return;
     stopEvent(event);
-    openFilePicker(node, index);
+    fileInput.click();
   });
 
   cell.addEventListener("dragover", (event) => {
     if (!event.dataTransfer) return;
-    const internal = hasTransferType(event.dataTransfer, "application/x-h3-image-index");
-    const external = hasTransferType(event.dataTransfer, "Files");
+    const internal = node.__h3ImageDragIndex != null
+      || hasTransferType(event.dataTransfer, "application/x-h3-image-index");
+    const external = hasExternalFiles(event.dataTransfer);
     if (!internal && !external) return;
     event.preventDefault();
     event.stopPropagation();
     event.dataTransfer.dropEffect = internal ? "move" : "copy";
+    node.__h3ImageLibraryRoot?.classList.remove("is-file-drop-target");
     clearDropState(node, cell);
     cell.classList.add("is-file-over");
   });
@@ -379,8 +453,8 @@ function createCell(node, index) {
     writeImages(node, images);
   });
 
-  cell.append(badge, image, emptyMark, name, remove);
-  cell.__h3ImageParts = { badge, image, emptyMark, name, remove };
+  cell.append(badge, image, emptyMark, name, remove, fileInput);
+  cell.__h3ImageParts = { badge, image, emptyMark, name, remove, fileInput };
   return cell;
 }
 
@@ -399,6 +473,12 @@ function hasTransferType(dataTransfer, type) {
   return Array.from(dataTransfer?.types || []).includes(type);
 }
 
+function hasExternalFiles(dataTransfer) {
+  if (!dataTransfer) return false;
+  return hasTransferType(dataTransfer, "Files")
+    || Array.from(dataTransfer.items || []).some((item) => item?.kind === "file");
+}
+
 function clearDropState(node, exception = null) {
   for (const cell of node.__h3ImageCells || []) {
     if (cell !== exception) cell.classList.remove("is-file-over");
@@ -412,14 +492,12 @@ function readImages(node) {
 function writeImages(node, images, status = "") {
   const stateWidget = widgetByName(node, "image_state");
   if (!stateWidget) return;
-  const normalized = images
+  const normalized = (Array.isArray(images) ? images : [])
     .map(normalizeFilename)
     .filter((filename) => filename && !filename.split("/").includes(".."))
     .slice(0, MAX_IMAGES);
   stateWidget.value = JSON.stringify({ version: 1, images: normalized.map((filename) => ({ filename })) });
   renderLibrary(node, status);
-  node.setDirtyCanvas?.(true, true);
-  app.graph?.change?.();
 }
 
 function renderLibrary(node, status = "") {
@@ -517,7 +595,7 @@ async function uploadFilesNow(node, fileList, startIndex) {
       }
       cursor += 1;
       inserted += 1;
-      writeImages(node);
+      writeImages(node, images);
     } catch (error) {
       errors.push(`${file.name || "图片"}：${error?.message || error}`);
     }
@@ -546,26 +624,6 @@ function uploadFiles(node, files, startIndex) {
   };
   queued.then(clear, clear);
   return queued;
-}
-
-function openFilePicker(node, startIndex) {
-  let input = node.__h3ImageFileInput;
-  if (!input) {
-    input = document.createElement("input");
-    input.type = "file";
-    input.accept = "image/*";
-    input.multiple = true;
-    input.hidden = true;
-    document.body.append(input);
-    node.__h3ImageFileInput = input;
-  }
-  input.value = "";
-  input.onchange = () => {
-    const files = Array.from(input.files || []);
-    input.value = "";
-    if (files.length) uploadFiles(node, files, startIndex);
-  };
-  input.click();
 }
 
 function moveImage(node, sourceIndex, targetIndex) {
@@ -634,7 +692,7 @@ function createPanel(node) {
   root.addEventListener("wheel", (event) => event.stopPropagation(), { passive: true });
 
   root.addEventListener("dragover", (event) => {
-    if (!hasTransferType(event.dataTransfer, "Files")) return;
+    if (!hasExternalFiles(event.dataTransfer)) return;
     event.preventDefault();
     event.stopPropagation();
     event.dataTransfer.dropEffect = "copy";
@@ -645,7 +703,7 @@ function createPanel(node) {
     root.classList.remove("is-file-drop-target");
   });
   root.addEventListener("drop", (event) => {
-    if (!hasTransferType(event.dataTransfer, "Files")) return;
+    if (!hasExternalFiles(event.dataTransfer)) return;
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation?.();
@@ -727,7 +785,6 @@ app.registerExtension({
     const onRemoved = nodeType.prototype.onRemoved;
     nodeType.prototype.onRemoved = function () {
       this.__h3ImageLibraryObserver?.disconnect?.();
-      this.__h3ImageFileInput?.remove?.();
       const result = onRemoved?.apply(this, arguments);
       return result;
     };
