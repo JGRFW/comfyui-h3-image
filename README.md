@@ -1,3 +1,7 @@
+<img width="2048" height="1152" alt="MiniMax H3 改进版文生图工作流封面" src="https://github.com/user-attachments/assets/a444ef3a-fbd8-47a7-858a-817de48c3940" />
+<img width="2057" height="1026" alt="image" src="https://github.com/user-attachments/assets/265d712d-8f90-49d6-a4ea-7336de71231c" />
+
+
 # comfyui-h3-image
 
 [![ComfyUI Custom Node](https://img.shields.io/badge/ComfyUI-Custom%20Node-2ea44f?style=flat-square)](https://www.comfy.org/)
