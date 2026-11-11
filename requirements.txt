@@ -1,0 +1,2 @@
+# comfyui-h3-image 无额外 Python 依赖。
+# 所有推理复用 ComfyUI 自带核心节点，torch / comfy 环境随 ComfyUI 本体提供。

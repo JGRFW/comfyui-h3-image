@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Local ComfyUI / editor noise
+$null
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Test and generated files
+output/
+temp/
+*.log
